@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  gymflow-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gymflow_api_service
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app/src
+    volumes:
+      - ./src:/app/src
+    restart: unless-stopped

@@ -1,0 +1,1755 @@
+"""Generate complete OpenAPI 3.1 specification for Apidog."""
+
+import json
+from pathlib import Path
+
+spec = {
+    "openapi": "3.1.0",
+    "info": {
+        "title": "GymFlow API — Gestão de Treinos e Acompanhamento Físico",
+        "version": "1.0.0",
+        "description": (
+            "### Visão Geral do Projeto (Design-First)\n"
+            "A **GymFlow API** é uma solução RESTful de alto nível projetada para conectar Personal Trainers e seus Alunos, "
+            "proporcionando gestão de carteira de alunos, prescrição periodizada de rotinas de treino e monitoramento "
+            "contínuo de evolução por meio de percepção subjetiva de esforço (Escala RPE Borg 1-10) e feedback de execução.\n\n"
+            "### Padrões e Boas Práticas\n"
+            "- **Schema-First & Reusabilidade:** 100% dos modelos desacoplados na seção Components/Schemas (proibido objetos inline).\n"
+            "- **Conformidade RFC 9457 (Problem Details):** Respostas de erro padronizadas via schema `ApiError`.\n"
+            "- **Nomenclatura no Wire:** Notação `camelCase` estrita nos payloads e query parameters.\n"
+            "- **Mock Server:** Configurado com expressões dinâmicas Mock.js/Faker.js (@guid, @name, @email, etc.)."
+        ),
+        "contact": {
+            "name": "Equipe GymFlow",
+            "email": "contato@gymflow.dev"
+        }
+    },
+    "servers": [
+        {
+            "url": "http://127.0.0.1:8000",
+            "description": "Ambiente Local (Desenvolvimento FastAPI)"
+        },
+        {
+            "url": "https://api.gymflow.dev",
+            "description": "Ambiente de Produção"
+        }
+    ],
+    "tags": [
+        {"name": "Students", "description": "Gestão da carteira de alunos e perfis físicos (Entidade 1)"},
+        {"name": "Workouts", "description": "Prescrição de planos de treino, rotinas e exercícios (Entidade 2)"},
+        {"name": "Executions", "description": "Registro de execuções de treino, escala RPE e feedback pelo aluno"},
+        {"name": "Authentication", "description": "Cadastro de usuários, login e emissão de tokens JWT"}
+    ],
+    "components": {
+        "securitySchemes": {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": "Token JWT emitido no endpoint `/api/v1/auth/login`. Formato: `Bearer <token>`"
+            }
+        },
+        "schemas": {
+            "UserRole": {
+                "type": "string",
+                "enum": ["PERSONAL", "STUDENT"],
+                "description": "Papel de acesso do usuário no sistema.",
+                "example": "PERSONAL"
+            },
+            "FitnessGoal": {
+                "type": "string",
+                "enum": ["HYPERTROPHY", "WEIGHT_LOSS", "CONDITIONING", "REHABILITATION", "GENERAL_FITNESS"],
+                "description": "Objetivo físico principal do aluno.",
+                "example": "HYPERTROPHY"
+            },
+            "MuscleGroup": {
+                "type": "string",
+                "enum": ["CHEST", "BACK", "LEGS", "SHOULDERS", "BICEPS", "TRICEPS", "CORE", "CARDIO", "FULL_BODY"],
+                "description": "Grupamento muscular principal trabalhado no exercício.",
+                "example": "CHEST"
+            },
+            "WorkoutStatus": {
+                "type": "string",
+                "enum": ["ACTIVE", "INACTIVE", "ARCHIVED"],
+                "description": "Status do plano de treino na periodização.",
+                "example": "ACTIVE"
+            },
+            "InvalidParam": {
+                "type": "object",
+                "description": "Item individual com erro de validação semântica.",
+                "required": ["name", "reason"],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Caminho ou nome do campo que falhou na validação.",
+                        "example": "profile.weightKg",
+                        "x-apidog-mock": "@word"
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Explicação técnica da restrição violada.",
+                        "example": "O peso deve ser maior que 0.",
+                        "x-apidog-mock": "@sentence(4)"
+                    }
+                }
+            },
+            "ApiError": {
+                "type": "object",
+                "description": "Formato padronizado de resposta de erro segundo a RFC 9457 (Problem Details).",
+                "required": ["type", "title", "status", "detail", "instance"],
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "format": "uri",
+                        "description": "URI absoluta identificando o tipo de erro.",
+                        "example": "https://api.gymflow.dev/errors/validation-error",
+                        "x-apidog-mock": "https://api.gymflow.dev/errors/validation-error"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Resumo legível para humanos da categoria do erro.",
+                        "example": "Erro de Validação Semântica",
+                        "x-apidog-mock": "Erro de Validação Semântica"
+                    },
+                    "status": {
+                        "type": "integer",
+                        "description": "Código de status HTTP correspondente.",
+                        "example": 422,
+                        "x-apidog-mock": 422
+                    },
+                    "detail": {
+                        "type": "string",
+                        "description": "Mensagem detalhada e contextualizada da ocorrência do erro.",
+                        "example": "Um ou mais campos da requisição falharam na validação.",
+                        "x-apidog-mock": "@sentence(6)"
+                    },
+                    "instance": {
+                        "type": "string",
+                        "description": "URI do endpoint onde ocorreu a falha.",
+                        "example": "/api/v1/students",
+                        "x-apidog-mock": "/api/v1/students"
+                    },
+                    "invalidParams": {
+                        "type": "array",
+                        "description": "Lista de parâmetros ou campos inválidos (preenchido em erros 400 ou 422).",
+                        "items": {"$ref": "#/components/schemas/InvalidParam"},
+                        "nullable": True
+                    }
+                }
+            },
+            "PaginationMeta": {
+                "type": "object",
+                "description": "Envelope de metadados para listagens paginadas.",
+                "required": ["page", "limit", "totalItems", "totalPages", "hasNext"],
+                "properties": {
+                    "page": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Número da página atual (inicia em 1).",
+                        "example": 1,
+                        "x-apidog-mock": 1
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "description": "Quantidade máxima de registros por página.",
+                        "example": 10,
+                        "x-apidog-mock": 10
+                    },
+                    "totalItems": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Total absoluto de itens encontrados com os filtros aplicados.",
+                        "example": 45,
+                        "x-apidog-mock": "@integer(10, 100)"
+                    },
+                    "totalPages": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Total de páginas disponíveis.",
+                        "example": 5,
+                        "x-apidog-mock": "@integer(1, 10)"
+                    },
+                    "hasNext": {
+                        "type": "boolean",
+                        "description": "Booleano indicando se há uma página posterior.",
+                        "example": True,
+                        "x-apidog-mock": "@boolean"
+                    }
+                }
+            },
+            "StudentProfileDTO": {
+                "type": "object",
+                "description": "Dados biométricos e objetivos físicos do aluno.",
+                "required": ["goal"],
+                "properties": {
+                    "birthDate": {
+                        "type": "string",
+                        "format": "date",
+                        "nullable": True,
+                        "description": "Data de nascimento no formato ISO 8601 (AAAA-MM-DD).",
+                        "example": "1998-05-15",
+                        "x-apidog-mock": "@date('yyyy-MM-dd')"
+                    },
+                    "weightKg": {
+                        "type": "number",
+                        "minimum": 20.0,
+                        "maximum": 300.0,
+                        "nullable": True,
+                        "description": "Peso corporal atual do aluno em quilogramas (kg).",
+                        "example": 78.5,
+                        "x-apidog-mock": "@float(50, 105, 1, 1)"
+                    },
+                    "heightCm": {
+                        "type": "number",
+                        "minimum": 100.0,
+                        "maximum": 250.0,
+                        "nullable": True,
+                        "description": "Estatura do aluno em centímetros (cm).",
+                        "example": 178.0,
+                        "x-apidog-mock": "@float(155, 195, 1, 1)"
+                    },
+                    "goal": {
+                        "$ref": "#/components/schemas/FitnessGoal"
+                    },
+                    "notes": {
+                        "type": "string",
+                        "maxLength": 500,
+                        "nullable": True,
+                        "description": "Observações do Personal Trainer sobre histórico clínico, lesões ou foco.",
+                        "example": "Foco em hipertrofia e fortalecimento do manguito rotador.",
+                        "x-apidog-mock": "@sentence(5)"
+                    }
+                }
+            },
+            "CreateStudentDTO": {
+                "type": "object",
+                "description": "Payload de entrada para criação de um novo aluno na carteira do Personal Trainer.",
+                "required": ["name", "email", "password"],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 100,
+                        "description": "Nome completo do aluno.",
+                        "example": "Rodrigo Aluno",
+                        "x-apidog-mock": "@name"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "description": "Endereço eletrônico único para login e notificações.",
+                        "example": "rodrigo@gymflow.dev",
+                        "x-apidog-mock": "@email"
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 6,
+                        "description": "Senha provisória de acesso do aluno.",
+                        "example": "Aluno123#",
+                        "x-apidog-mock": "Aluno123#"
+                    },
+                    "phone": {
+                        "type": "string",
+                        "pattern": "^\\+?[1-9]\\d{1,14}$",
+                        "nullable": True,
+                        "description": "Telefone de contato no padrão internacional E.164.",
+                        "example": "+5511999990002",
+                        "x-apidog-mock": "+5511999990002"
+                    },
+                    "profile": {
+                        "$ref": "#/components/schemas/StudentProfileDTO",
+                        "nullable": True
+                    }
+                }
+            },
+            "UpdateStudentDTO": {
+                "type": "object",
+                "description": "Payload para atualização parcial dos dados cadastrais e perfil físico do aluno.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 100,
+                        "nullable": True,
+                        "description": "Nome completo atualizado.",
+                        "example": "Rodrigo Aluno Atualizado",
+                        "x-apidog-mock": "@name"
+                    },
+                    "phone": {
+                        "type": "string",
+                        "pattern": "^\\+?[1-9]\\d{1,14}$",
+                        "nullable": True,
+                        "description": "Telefone de contato atualizado.",
+                        "example": "+5511988887777",
+                        "x-apidog-mock": "+5511988887777"
+                    },
+                    "profile": {
+                        "$ref": "#/components/schemas/StudentProfileDTO",
+                        "nullable": True
+                    }
+                }
+            },
+            "StudentResponse": {
+                "type": "object",
+                "description": "Representação completa de um aluno cadastrado.",
+                "required": ["id", "personalId", "name", "email", "role", "createdAt", "updatedAt"],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Identificador único global do aluno.",
+                        "example": "22222222-2222-2222-2222-222222222222",
+                        "x-apidog-mock": "@guid"
+                    },
+                    "personalId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Identificador do Personal Trainer responsável por este aluno.",
+                        "example": "11111111-1111-1111-1111-111111111111",
+                        "x-apidog-mock": "@guid"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Nome completo do aluno.",
+                        "example": "Rodrigo Aluno",
+                        "x-apidog-mock": "@name"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "description": "E-mail de acesso do aluno.",
+                        "example": "rodrigo@gymflow.dev",
+                        "x-apidog-mock": "@email"
+                    },
+                    "role": {
+                        "$ref": "#/components/schemas/UserRole"
+                    },
+                    "phone": {
+                        "type": "string",
+                        "nullable": True,
+                        "description": "Telefone de contato.",
+                        "example": "+5511999990002",
+                        "x-apidog-mock": "+5511999990002"
+                    },
+                    "profile": {
+                        "$ref": "#/components/schemas/StudentProfileDTO",
+                        "nullable": True
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Data e hora de criação do registro.",
+                        "example": "2026-02-10T09:00:00Z",
+                        "x-apidog-mock": "@datetime"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Data e hora da última modificação do registro.",
+                        "example": "2026-02-10T09:00:00Z",
+                        "x-apidog-mock": "@datetime"
+                    }
+                }
+            },
+            "PaginatedStudentsResponse": {
+                "type": "object",
+                "description": "Resposta paginada contendo a listagem de alunos.",
+                "required": ["data", "meta"],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "description": "Vetor de alunos pertencentes à página corrente.",
+                        "items": {"$ref": "#/components/schemas/StudentResponse"}
+                    },
+                    "meta": {
+                        "$ref": "#/components/schemas/PaginationMeta"
+                    }
+                }
+            },
+            "WorkoutExerciseDTO": {
+                "type": "object",
+                "description": "Prescrição técnica detalhada de um exercício dentro da rotina de treino.",
+                "required": ["name", "muscleGroup", "sets", "reps", "restSeconds", "order"],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 100,
+                        "description": "Nome técnico e biomecânico do exercício.",
+                        "example": "Supino Reto com Barra",
+                        "x-apidog-mock": "Supino Reto com Barra"
+                    },
+                    "muscleGroup": {
+                        "$ref": "#/components/schemas/MuscleGroup"
+                    },
+                    "sets": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 20,
+                        "description": "Número de séries prescritas.",
+                        "example": 4,
+                        "x-apidog-mock": 4
+                    },
+                    "reps": {
+                        "type": "string",
+                        "maxLength": 30,
+                        "description": "Faixa ou quantidade estrita de repetições planejadas.",
+                        "example": "8-12",
+                        "x-apidog-mock": "8-12"
+                    },
+                    "restSeconds": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 600,
+                        "description": "Tempo de intervalo e recuperação entre séries em segundos.",
+                        "example": 90,
+                        "x-apidog-mock": 90
+                    },
+                    "weightKg": {
+                        "type": "number",
+                        "minimum": 0.0,
+                        "nullable": True,
+                        "description": "Carga inicial ou sugerida em quilogramas (kg).",
+                        "example": 60.0,
+                        "x-apidog-mock": 60.0
+                    },
+                    "notes": {
+                        "type": "string",
+                        "maxLength": 300,
+                        "nullable": True,
+                        "description": "Recomendações técnicas, cadência e instruções de execução.",
+                        "example": "Manter escápulas aduzidas e cadência controlada.",
+                        "x-apidog-mock": "@sentence(4)"
+                    },
+                    "order": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Ordem sequencial de realização dentro da rotina.",
+                        "example": 1,
+                        "x-apidog-mock": 1
+                    }
+                }
+            },
+            "WorkoutExerciseResponse": {
+                "type": "object",
+                "description": "Exercício persistido vinculado a uma rotina de treino.",
+                "required": ["id", "routineId", "name", "muscleGroup", "sets", "reps", "restSeconds", "order", "createdAt"],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Identificador único do exercício.",
+                        "example": "44444444-4444-4444-4444-444444444444",
+                        "x-apidog-mock": "@guid"
+                    },
+                    "routineId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Identificador da rotina de treino pai.",
+                        "example": "33333333-3333-3333-3333-333333333333",
+                        "x-apidog-mock": "@guid"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Nome do exercício.",
+                        "example": "Supino Reto com Barra",
+                        "x-apidog-mock": "Supino Reto com Barra"
+                    },
+                    "muscleGroup": {
+                        "$ref": "#/components/schemas/MuscleGroup"
+                    },
+                    "sets": {
+                        "type": "integer",
+                        "description": "Número de séries.",
+                        "example": 4,
+                        "x-apidog-mock": 4
+                    },
+                    "reps": {
+                        "type": "string",
+                        "description": "Repetições prescritas.",
+                        "example": "8-12",
+                        "x-apidog-mock": "8-12"
+                    },
+                    "restSeconds": {
+                        "type": "integer",
+                        "description": "Intervalo em segundos.",
+                        "example": 90,
+                        "x-apidog-mock": 90
+                    },
+                    "weightKg": {
+                        "type": "number",
+                        "nullable": True,
+                        "description": "Carga sugerida em kg.",
+                        "example": 60.0,
+                        "x-apidog-mock": 60.0
+                    },
+                    "notes": {
+                        "type": "string",
+                        "nullable": True,
+                        "description": "Observações.",
+                        "example": "Manter escápulas aduzidas",
+                        "x-apidog-mock": "@sentence(4)"
+                    },
+                    "order": {
+                        "type": "integer",
+                        "description": "Ordem de execução.",
+                        "example": 1,
+                        "x-apidog-mock": 1
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Data/hora de cadastro.",
+                        "example": "2026-02-10T10:10:00Z",
+                        "x-apidog-mock": "@datetime"
+                    }
+                }
+            },
+            "WorkoutRoutineDTO": {
+                "type": "object",
+                "description": "Divisão ou dia de treino dentro do plano (Treino A, Treino B, etc.).",
+                "required": ["name", "order"],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 80,
+                        "description": "Nome da divisão de treino.",
+                        "example": "Treino A — Peito, Tríceps e Deltoides",
+                        "x-apidog-mock": "Treino A — Peito, Tríceps e Deltoides"
+                    },
+                    "dayOfWeek": {
+                        "type": "string",
+                        "nullable": True,
+                        "description": "Dia da semana sugerido para realização.",
+                        "example": "Segunda-feira",
+                        "x-apidog-mock": "Segunda-feira"
+                    },
+                    "order": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Ordem de execução da rotina.",
+                        "example": 1,
+                        "x-apidog-mock": 1
+                    },
+                    "exercises": {
+                        "type": "array",
+                        "description": "Lista de exercícios prescritos na divisão.",
+                        "items": {"$ref": "#/components/schemas/WorkoutExerciseDTO"}
+                    }
+                }
+            },
+            "WorkoutRoutineResponse": {
+                "type": "object",
+                "description": "Rotina de treino cadastrada com seus exercícios aninhados.",
+                "required": ["id", "workoutPlanId", "name", "order", "exercises", "createdAt"],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Identificador único da rotina.",
+                        "example": "33333333-3333-3333-3333-333333333333",
+                        "x-apidog-mock": "@guid"
+                    },
+                    "workoutPlanId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Identificador do plano de treino associado.",
+                        "example": "55555555-5555-5555-5555-555555555555",
+                        "x-apidog-mock": "@guid"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Nome da rotina.",
+                        "example": "Treino A — Peito, Tríceps e Deltoides",
+                        "x-apidog-mock": "Treino A — Peito, Tríceps e Deltoides"
+                    },
+                    "dayOfWeek": {
+                        "type": "string",
+                        "nullable": True,
+                        "description": "Dia da semana planejado.",
+                        "example": "Segunda-feira",
+                        "x-apidog-mock": "Segunda-feira"
+                    },
+                    "order": {
+                        "type": "integer",
+                        "description": "Ordem sequencial.",
+                        "example": 1,
+                        "x-apidog-mock": 1
+                    },
+                    "exercises": {
+                        "type": "array",
+                        "description": "Lista de exercícios da rotina.",
+                        "items": {"$ref": "#/components/schemas/WorkoutExerciseResponse"}
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Data de cadastro.",
+                        "example": "2026-02-10T10:05:00Z",
+                        "x-apidog-mock": "@datetime"
+                    }
+                }
+            },
+            "CreateWorkoutPlanDTO": {
+                "type": "object",
+                "description": "Payload para criação completa de um plano de treino e suas rotinas aninhadas.",
+                "required": ["studentId", "title", "startDate"],
+                "properties": {
+                    "studentId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Identificador do aluno que receberá a prescrição.",
+                        "example": "22222222-2222-2222-2222-222222222222",
+                        "x-apidog-mock": "@guid"
+                    },
+                    "title": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 100,
+                        "description": "Título identificador do plano de treino ou periodização.",
+                        "example": "Ciclo Hipertrofia 1 - Upper/Lower",
+                        "x-apidog-mock": "Ciclo Hipertrofia 1 - Upper/Lower"
+                    },
+                    "description": {
+                        "type": "string",
+                        "maxLength": 500,
+                        "nullable": True,
+                        "description": "Descrição metodológica, diretrizes de intensidade e metas.",
+                        "example": "Periodização inicial com foco em membros superiores e inferiores.",
+                        "x-apidog-mock": "@sentence(6)"
+                    },
+                    "startDate": {
+                        "type": "string",
+                        "format": "date",
+                        "description": "Data de início da vigência do plano (AAAA-MM-DD).",
+                        "example": "2026-02-10",
+                        "x-apidog-mock": "@date('yyyy-MM-dd')"
+                    },
+                    "endDate": {
+                        "type": "string",
+                        "format": "date",
+                        "nullable": True,
+                        "description": "Data prevista para encerramento do ciclo de treino.",
+                        "example": "2026-04-10",
+                        "x-apidog-mock": "@date('yyyy-MM-dd')"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/WorkoutStatus",
+                        "default": "ACTIVE"
+                    },
+                    "routines": {
+                        "type": "array",
+                        "description": "Rotinas de treino (divisões A/B/C) que compõem o plano.",
+                        "items": {"$ref": "#/components/schemas/WorkoutRoutineDTO"}
+                    }
+                }
+            },
+            "UpdateWorkoutPlanDTO": {
+                "type": "object",
+                "description": "Payload para atualização parcial dos metadados e vigência de um plano de treino.",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 100,
+                        "nullable": True,
+                        "description": "Título atualizado.",
+                        "example": "Ciclo Hipertrofia 1 - Atualizado",
+                        "x-apidog-mock": "Ciclo Hipertrofia 1 - Atualizado"
+                    },
+                    "description": {
+                        "type": "string",
+                        "maxLength": 500,
+                        "nullable": True,
+                        "description": "Descrição atualizada.",
+                        "example": "Ajuste na periodização com aumento de intensidade.",
+                        "x-apidog-mock": "@sentence(6)"
+                    },
+                    "startDate": {
+                        "type": "string",
+                        "format": "date",
+                        "nullable": True,
+                        "description": "Nova data de início.",
+                        "example": "2026-02-15",
+                        "x-apidog-mock": "@date('yyyy-MM-dd')"
+                    },
+                    "endDate": {
+                        "type": "string",
+                        "format": "date",
+                        "nullable": True,
+                        "description": "Nova data de término.",
+                        "example": "2026-05-15",
+                        "x-apidog-mock": "@date('yyyy-MM-dd')"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/WorkoutStatus",
+                        "nullable": True
+                    }
+                }
+            },
+            "WorkoutPlanResponse": {
+                "type": "object",
+                "description": "Ficha completa de plano de treino com todas as rotinas e exercícios.",
+                "required": ["id", "personalId", "studentId", "title", "status", "startDate", "routines", "createdAt", "updatedAt"],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Identificador único do plano de treino.",
+                        "example": "55555555-5555-5555-5555-555555555555",
+                        "x-apidog-mock": "@guid"
+                    },
+                    "personalId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Identificador do Personal Trainer criador do plano.",
+                        "example": "11111111-1111-1111-1111-111111111111",
+                        "x-apidog-mock": "@guid"
+                    },
+                    "studentId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Identificador do aluno vinculado.",
+                        "example": "22222222-2222-2222-2222-222222222222",
+                        "x-apidog-mock": "@guid"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Título do plano.",
+                        "example": "Ciclo Hipertrofia 1 - Upper/Lower",
+                        "x-apidog-mock": "Ciclo Hipertrofia 1 - Upper/Lower"
+                    },
+                    "description": {
+                        "type": "string",
+                        "nullable": True,
+                        "description": "Descrição metodológica.",
+                        "example": "Periodização inicial com foco em membros superiores e inferiores.",
+                        "x-apidog-mock": "@sentence(6)"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/WorkoutStatus"
+                    },
+                    "startDate": {
+                        "type": "string",
+                        "format": "date",
+                        "description": "Data de início da vigência.",
+                        "example": "2026-02-10",
+                        "x-apidog-mock": "@date('yyyy-MM-dd')"
+                    },
+                    "endDate": {
+                        "type": "string",
+                        "format": "date",
+                        "nullable": True,
+                        "description": "Data de término da vigência.",
+                        "example": "2026-04-10",
+                        "x-apidog-mock": "@date('yyyy-MM-dd')"
+                    },
+                    "routines": {
+                        "type": "array",
+                        "description": "Rotinas de treino da ficha.",
+                        "items": {"$ref": "#/components/schemas/WorkoutRoutineResponse"}
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Data/hora de criação.",
+                        "example": "2026-02-10T10:00:00Z",
+                        "x-apidog-mock": "@datetime"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Data/hora da última alteração.",
+                        "example": "2026-02-10T10:00:00Z",
+                        "x-apidog-mock": "@datetime"
+                    }
+                }
+            },
+            "PaginatedWorkoutsResponse": {
+                "type": "object",
+                "description": "Resposta paginada contendo listagem de planos de treino.",
+                "required": ["data", "meta"],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "description": "Lista de planos de treino da página corrente.",
+                        "items": {"$ref": "#/components/schemas/WorkoutPlanResponse"}
+                    },
+                    "meta": {
+                        "$ref": "#/components/schemas/PaginationMeta"
+                    }
+                }
+            },
+            "CreateExecutionDTO": {
+                "type": "object",
+                "description": "Registro de conclusão (check-in) de treino realizado pelo aluno.",
+                "required": ["durationMinutes", "rpeScore"],
+                "properties": {
+                    "durationMinutes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 360,
+                        "description": "Duração efetiva da sessão de treino em minutos.",
+                        "example": 55,
+                        "x-apidog-mock": "@integer(30, 90)"
+                    },
+                    "rpeScore": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10,
+                        "description": "Pontuação na Escala RPE Borg (1: Repouso / 10: Esforço Máximo).",
+                        "example": 8,
+                        "x-apidog-mock": "@integer(6, 9)"
+                    },
+                    "feedback": {
+                        "type": "string",
+                        "maxLength": 500,
+                        "nullable": True,
+                        "description": "Relato qualitativo do aluno sobre a sessão.",
+                        "example": "Treino intenso, consegui progredir carga no supino.",
+                        "x-apidog-mock": "@sentence(5)"
+                    },
+                    "completedAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": True,
+                        "description": "Data e hora exata da conclusão do treino.",
+                        "example": "2026-02-11T19:30:00Z",
+                        "x-apidog-mock": "@datetime"
+                    }
+                }
+            },
+            "ExecutionResponse": {
+                "type": "object",
+                "description": "Execução de treino registrada no histórico.",
+                "required": ["id", "studentId", "routineId", "durationMinutes", "rpeScore", "completedAt", "createdAt"],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Identificador único da execução.",
+                        "example": "66666666-6666-6666-6666-666666666666",
+                        "x-apidog-mock": "@guid"
+                    },
+                    "studentId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Identificador do aluno praticante.",
+                        "example": "22222222-2222-2222-2222-222222222222",
+                        "x-apidog-mock": "@guid"
+                    },
+                    "routineId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Identificador da rotina de treino executada.",
+                        "example": "33333333-3333-3333-3333-333333333333",
+                        "x-apidog-mock": "@guid"
+                    },
+                    "durationMinutes": {
+                        "type": "integer",
+                        "description": "Duração em minutos.",
+                        "example": 55,
+                        "x-apidog-mock": 55
+                    },
+                    "rpeScore": {
+                        "type": "integer",
+                        "description": "Pontuação RPE (1-10).",
+                        "example": 8,
+                        "x-apidog-mock": 8
+                    },
+                    "feedback": {
+                        "type": "string",
+                        "nullable": True,
+                        "description": "Feedback do aluno.",
+                        "example": "Treino intenso, consegui progredir carga no supino.",
+                        "x-apidog-mock": "@sentence(5)"
+                    },
+                    "completedAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Data/hora da conclusão.",
+                        "example": "2026-02-11T19:30:00Z",
+                        "x-apidog-mock": "@datetime"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Data/hora de registro no banco.",
+                        "example": "2026-02-11T19:30:05Z",
+                        "x-apidog-mock": "@datetime"
+                    }
+                }
+            },
+            "RegisterUserDTO": {
+                "type": "object",
+                "description": "Dados para cadastro de usuário (Personal ou Aluno público).",
+                "required": ["name", "email", "password", "role"],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 100,
+                        "description": "Nome completo do usuário.",
+                        "example": "Carlos Personal",
+                        "x-apidog-mock": "@name"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "description": "E-mail de acesso.",
+                        "example": "carlos@gymflow.dev",
+                        "x-apidog-mock": "@email"
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 6,
+                        "description": "Senha segura.",
+                        "example": "Personal123#",
+                        "x-apidog-mock": "Personal123#"
+                    },
+                    "role": {
+                        "$ref": "#/components/schemas/UserRole"
+                    },
+                    "phone": {
+                        "type": "string",
+                        "nullable": True,
+                        "description": "Telefone de contato.",
+                        "example": "+5511999990001",
+                        "x-apidog-mock": "+5511999990001"
+                    },
+                    "cref": {
+                        "type": "string",
+                        "nullable": True,
+                        "description": "Registro profissional no Conselho Regional de Educação Física (obrigatório se role=PERSONAL).",
+                        "example": "012345-G/SP",
+                        "x-apidog-mock": "012345-G/SP"
+                    }
+                }
+            },
+            "LoginRequestDTO": {
+                "type": "object",
+                "description": "Credenciais para autenticação.",
+                "required": ["email", "password"],
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "description": "E-mail cadastrado.",
+                        "example": "carlos@gymflow.dev",
+                        "x-apidog-mock": "@email"
+                    },
+                    "password": {
+                        "type": "string",
+                        "description": "Senha do usuário.",
+                        "example": "Personal123#",
+                        "x-apidog-mock": "Personal123#"
+                    }
+                }
+            },
+            "UserResponse": {
+                "type": "object",
+                "description": "Dados do usuário autenticado.",
+                "required": ["id", "name", "email", "role", "createdAt", "updatedAt"],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "ID do usuário.",
+                        "example": "11111111-1111-1111-1111-111111111111",
+                        "x-apidog-mock": "@guid"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Nome completo.",
+                        "example": "Carlos Personal",
+                        "x-apidog-mock": "@name"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "description": "E-mail.",
+                        "example": "carlos@gymflow.dev",
+                        "x-apidog-mock": "@email"
+                    },
+                    "role": {
+                        "$ref": "#/components/schemas/UserRole"
+                    },
+                    "phone": {
+                        "type": "string",
+                        "nullable": True,
+                        "description": "Telefone.",
+                        "example": "+5511999990001",
+                        "x-apidog-mock": "+5511999990001"
+                    },
+                    "cref": {
+                        "type": "string",
+                        "nullable": True,
+                        "description": "CREF (se aplicável).",
+                        "example": "012345-G/SP",
+                        "x-apidog-mock": "012345-G/SP"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Data de criação.",
+                        "example": "2026-02-10T08:00:00Z",
+                        "x-apidog-mock": "@datetime"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Data de atualização.",
+                        "example": "2026-02-10T08:00:00Z",
+                        "x-apidog-mock": "@datetime"
+                    }
+                }
+            },
+            "AuthTokenResponse": {
+                "type": "object",
+                "description": "Token JWT emitido e dados do usuário autenticado.",
+                "required": ["accessToken", "tokenType", "user"],
+                "properties": {
+                    "accessToken": {
+                        "type": "string",
+                        "description": "Token Bearer JWT assinado.",
+                        "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        "x-apidog-mock": "@string(60)"
+                    },
+                    "tokenType": {
+                        "type": "string",
+                        "description": "Tipo do token emitido.",
+                        "example": "bearer",
+                        "x-apidog-mock": "bearer"
+                    },
+                    "user": {
+                        "$ref": "#/components/schemas/UserResponse"
+                    }
+                }
+            }
+        }
+    },
+    "security": [
+        {"BearerAuth": []}
+    ],
+    "paths": {
+        "/api/v1/students": {
+            "get": {
+                "tags": ["Students"],
+                "summary": "Listar alunos com paginação e filtros",
+                "description": "Retorna a carteira de alunos associados ao Personal Trainer autenticado, com suporte a paginação e filtros por texto ou objetivo.",
+                "operationId": "listStudents",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "required": False,
+                        "description": "Número da página desejada.",
+                        "schema": {"type": "integer", "default": 1, "minimum": 1}
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": False,
+                        "description": "Número máximo de registros por página.",
+                        "schema": {"type": "integer", "default": 10, "minimum": 1, "maximum": 100}
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "required": False,
+                        "description": "Filtro parcial por nome ou e-mail.",
+                        "schema": {"type": "string"}
+                    },
+                    {
+                        "name": "goal",
+                        "in": "query",
+                        "required": False,
+                        "description": "Filtro por objetivo físico.",
+                        "schema": {"$ref": "#/components/schemas/FitnessGoal"}
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Listagem de alunos retornada com sucesso.",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/PaginatedStudentsResponse"}
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Token ausente ou expirado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "403": {
+                        "description": "Acesso proibido: rota restrita a Personal Trainers.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    }
+                }
+            },
+            "post": {
+                "tags": ["Students"],
+                "summary": "Cadastrar novo aluno na carteira do Personal",
+                "description": "Cria um novo usuário com papel STUDENT e o associa automaticamente ao Personal Trainer logado.",
+                "operationId": "createStudent",
+                "requestBody": {
+                    "required": True,
+                    "description": "Dados cadastrais e perfil físico do aluno.",
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/CreateStudentDTO"}
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Aluno cadastrado com sucesso.",
+                        "headers": {
+                            "Location": {
+                                "description": "URI do novo recurso criado.",
+                                "schema": {"type": "string", "example": "/api/v1/students/22222222-2222-2222-2222-222222222222"}
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/StudentResponse"}
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "E-mail já em uso ou requisição malformada.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "401": {
+                        "description": "Não autenticado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "403": {
+                        "description": "Acesso negado para o perfil.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "422": {
+                        "description": "Erro de validação semântica nos campos do aluno.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    }
+                }
+            }
+        },
+        "/api/v1/students/{studentId}": {
+            "parameters": [
+                {
+                    "name": "studentId",
+                    "in": "path",
+                    "required": True,
+                    "description": "Identificador UUID do aluno.",
+                    "schema": {"type": "string", "format": "uuid", "example": "22222222-2222-2222-2222-222222222222"}
+                }
+            ],
+            "get": {
+                "tags": ["Students"],
+                "summary": "Obter detalhes de um aluno por ID",
+                "description": "Recupera o cadastro e perfil físico do aluno. Acesso autorizado apenas ao Personal responsável ou ao próprio aluno.",
+                "operationId": "getStudentById",
+                "responses": {
+                    "200": {
+                        "description": "Aluno encontrado com sucesso.",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/StudentResponse"}
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "UUID malformado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "401": {
+                        "description": "Não autenticado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "403": {
+                        "description": "Acesso proibido a este aluno.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "404": {
+                        "description": "Aluno não encontrado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    }
+                }
+            },
+            "patch": {
+                "tags": ["Students"],
+                "summary": "Atualizar cadastro e perfil físico do aluno",
+                "description": "Aplica atualizações parciais aos dados do aluno pertencente ao Personal Trainer autenticado.",
+                "operationId": "patchStudent",
+                "requestBody": {
+                    "required": True,
+                    "description": "Campos a serem atualizados.",
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/UpdateStudentDTO"}
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Aluno atualizado com sucesso.",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/StudentResponse"}
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "UUID malformado ou requisição inválida.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "401": {
+                        "description": "Não autenticado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "403": {
+                        "description": "Acesso proibido: restrito a Personal Trainers.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "404": {
+                        "description": "Aluno não encontrado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "422": {
+                        "description": "Campos com tipos ou valores inválidos.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    }
+                }
+            },
+            "delete": {
+                "tags": ["Students"],
+                "summary": "Remover aluno da carteira do Personal",
+                "description": "Exclui o aluno e desvincula seus treinos e históricos.",
+                "operationId": "deleteStudent",
+                "responses": {
+                    "204": {
+                        "description": "Aluno removido com sucesso (sem corpo de retorno)."
+                    },
+                    "400": {
+                        "description": "UUID malformado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "401": {
+                        "description": "Não autenticado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "403": {
+                        "description": "Acesso proibido: restrito a Personal Trainers.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "404": {
+                        "description": "Aluno não encontrado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    }
+                }
+            }
+        },
+        "/api/v1/workouts": {
+            "get": {
+                "tags": ["Workouts"],
+                "summary": "Listar fichas de treino com filtros e paginação",
+                "description": "Retorna os planos de treino criados pelo Personal logado OU atribuídos ao Aluno logado.",
+                "operationId": "listWorkouts",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "required": False,
+                        "description": "Número da página.",
+                        "schema": {"type": "integer", "default": 1, "minimum": 1}
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": False,
+                        "description": "Quantidade máxima de registros por página.",
+                        "schema": {"type": "integer", "default": 10, "minimum": 1, "maximum": 100}
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "required": False,
+                        "description": "Filtro textual no título ou descrição.",
+                        "schema": {"type": "string"}
+                    },
+                    {
+                        "name": "studentId",
+                        "in": "query",
+                        "required": False,
+                        "description": "Filtro de treinos por aluno específico.",
+                        "schema": {"type": "string", "format": "uuid"}
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "required": False,
+                        "description": "Filtro por status do treino.",
+                        "schema": {"$ref": "#/components/schemas/WorkoutStatus"}
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Listagem de treinos retornada com sucesso.",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/PaginatedWorkoutsResponse"}
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Não autenticado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    }
+                }
+            },
+            "post": {
+                "tags": ["Workouts"],
+                "summary": "Criar novo plano de treino completo com rotinas e exercícios",
+                "description": "Permite ao Personal Trainer prescrever uma nova ficha periodizada contendo rotinas (A/B/C) e exercícios em cascata.",
+                "operationId": "createWorkoutPlan",
+                "requestBody": {
+                    "required": True,
+                    "description": "Dados completos da ficha de treino.",
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/CreateWorkoutPlanDTO"}
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Plano de treino criado com sucesso.",
+                        "headers": {
+                            "Location": {
+                                "description": "URI da nova ficha criada.",
+                                "schema": {"type": "string", "example": "/api/v1/workouts/55555555-5555-5555-5555-555555555555"}
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/WorkoutPlanResponse"}
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Requisição malformada ou dados inválidos.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "401": {
+                        "description": "Não autenticado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "403": {
+                        "description": "Acesso restrito a Personal Trainers.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "404": {
+                        "description": "Aluno associado não encontrado na carteira.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "422": {
+                        "description": "Erro de validação semântica nos campos.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    }
+                }
+            }
+        },
+        "/api/v1/workouts/{workoutId}": {
+            "parameters": [
+                {
+                    "name": "workoutId",
+                    "in": "path",
+                    "required": True,
+                    "description": "Identificador UUID do plano de treino.",
+                    "schema": {"type": "string", "format": "uuid", "example": "55555555-5555-5555-5555-555555555555"}
+                }
+            ],
+            "get": {
+                "tags": ["Workouts"],
+                "summary": "Obter plano de treino completo por ID",
+                "description": "Recupera todas as rotinas e exercícios prescritos ordenados. Acessível pelo Personal criador ou Aluno destinatário.",
+                "operationId": "getWorkoutById",
+                "responses": {
+                    "200": {
+                        "description": "Plano de treino recuperado com sucesso.",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/WorkoutPlanResponse"}
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "UUID malformado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "401": {
+                        "description": "Não autenticado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "403": {
+                        "description": "Acesso proibido a este plano.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "404": {
+                        "description": "Plano de treino inexistente.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    }
+                }
+            },
+            "patch": {
+                "tags": ["Workouts"],
+                "summary": "Atualizar metadados do plano de treino",
+                "description": "Permite ao Personal criador alterar título, vigência, status ou descrição da ficha.",
+                "operationId": "patchWorkout",
+                "requestBody": {
+                    "required": True,
+                    "description": "Campos a atualizar.",
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/UpdateWorkoutPlanDTO"}
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Plano de treino atualizado com sucesso.",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/WorkoutPlanResponse"}
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "UUID inválido ou payload malformado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "401": {
+                        "description": "Não autenticado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "403": {
+                        "description": "Acesso proibido a Personal não proprietário.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "404": {
+                        "description": "Plano de treino não encontrado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "422": {
+                        "description": "Erro de validação semântica.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    }
+                }
+            },
+            "delete": {
+                "tags": ["Workouts"],
+                "summary": "Remover plano de treino",
+                "description": "Exclui a ficha de treino e todas as suas rotinas e exercícios associados em cascata.",
+                "operationId": "deleteWorkout",
+                "responses": {
+                    "204": {
+                        "description": "Plano de treino excluído com sucesso (sem corpo)."
+                    },
+                    "400": {
+                        "description": "UUID malformado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "401": {
+                        "description": "Não autenticado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "403": {
+                        "description": "Acesso proibido: restrito a Personal Trainers.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "404": {
+                        "description": "Plano de treino não encontrado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    }
+                }
+            }
+        },
+        "/api/v1/workouts/{workoutId}/routines": {
+            "parameters": [
+                {
+                    "name": "workoutId",
+                    "in": "path",
+                    "required": True,
+                    "description": "Identificador UUID do plano de treino.",
+                    "schema": {"type": "string", "format": "uuid"}
+                }
+            ],
+            "post": {
+                "tags": ["Workouts"],
+                "summary": "Adicionar divisão de rotina ao plano de treino",
+                "description": "Adiciona uma divisão (ex: Treino B) a um plano de treino existente.",
+                "operationId": "addRoutineToWorkout",
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/WorkoutRoutineDTO"}
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Rotina adicionada com sucesso.",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/WorkoutRoutineResponse"}
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "UUID inválido ou payload malformado.",
+                        "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}
+                    },
+                    "401": {"description": "Não autenticado.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "403": {"description": "Acesso restrito.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "404": {"description": "Plano não encontrado.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "422": {"description": "Erro de validação.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}}
+                }
+            }
+        },
+        "/api/v1/routines/{routineId}/exercises": {
+            "parameters": [
+                {
+                    "name": "routineId",
+                    "in": "path",
+                    "required": True,
+                    "description": "Identificador UUID da rotina de treino.",
+                    "schema": {"type": "string", "format": "uuid"}
+                }
+            ],
+            "post": {
+                "tags": ["Workouts"],
+                "summary": "Adicionar exercício a uma rotina de treino",
+                "description": "Prescreve um novo exercício dentro da divisão de treino informada.",
+                "operationId": "addExerciseToRoutine",
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/WorkoutExerciseDTO"}
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Exercício prescrito com sucesso.",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/WorkoutExerciseResponse"}
+                            }
+                        }
+                    },
+                    "400": {"description": "UUID malformado.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "401": {"description": "Não autenticado.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "403": {"description": "Acesso proibido.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "404": {"description": "Rotina não encontrada.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "422": {"description": "Dados do exercício inválidos.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}}
+                }
+            }
+        },
+        "/api/v1/exercises/{exerciseId}": {
+            "parameters": [
+                {
+                    "name": "exerciseId",
+                    "in": "path",
+                    "required": True,
+                    "description": "Identificador UUID do exercício.",
+                    "schema": {"type": "string", "format": "uuid"}
+                }
+            ],
+            "delete": {
+                "tags": ["Workouts"],
+                "summary": "Remover exercício de uma rotina",
+                "description": "Exclui o exercício especificado da rotina.",
+                "operationId": "deleteExercise",
+                "responses": {
+                    "204": {"description": "Exercício excluído com sucesso (sem corpo)."},
+                    "400": {"description": "UUID malformado.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "401": {"description": "Não autenticado.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "403": {"description": "Acesso restrito.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "404": {"description": "Exercício inexistente.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}}
+                }
+            }
+        },
+        "/api/v1/routines/{routineId}/executions": {
+            "parameters": [
+                {
+                    "name": "routineId",
+                    "in": "path",
+                    "required": True,
+                    "description": "Identificador UUID da rotina realizada.",
+                    "schema": {"type": "string", "format": "uuid", "example": "33333333-3333-3333-3333-333333333333"}
+                }
+            ],
+            "post": {
+                "tags": ["Executions"],
+                "summary": "Registrar execução e feedback de treino (Check-in do Aluno)",
+                "description": "Permite ao aluno registrar a conclusão de uma rotina com duração, percepção subjetiva de esforço (Escala RPE 1-10) e feedback.",
+                "operationId": "createExecution",
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/CreateExecutionDTO"}
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Execução registrada com sucesso.",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/ExecutionResponse"}
+                            }
+                        }
+                    },
+                    "400": {"description": "UUID inválido ou payload corrompido.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "401": {"description": "Não autenticado.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "403": {"description": "Acesso negado: rotina não atribuída a este aluno.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "404": {"description": "Rotina não encontrada.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "422": {"description": "RPE fora da faixa (1-10) ou duração inválida.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}}
+                }
+            }
+        },
+        "/api/v1/students/{studentId}/executions": {
+            "parameters": [
+                {
+                    "name": "studentId",
+                    "in": "path",
+                    "required": True,
+                    "description": "Identificador UUID do aluno.",
+                    "schema": {"type": "string", "format": "uuid", "example": "22222222-2222-2222-2222-222222222222"}
+                }
+            ],
+            "get": {
+                "tags": ["Executions"],
+                "summary": "Listar histórico de execuções de treino do aluno",
+                "description": "Consulta o histórico cronológico de sessões finalizadas com RPE e feedbacks. Acessível pelo Personal responsável ou pelo próprio Aluno.",
+                "operationId": "getStudentExecutions",
+                "responses": {
+                    "200": {
+                        "description": "Histórico de execuções retornado com sucesso.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {"$ref": "#/components/schemas/ExecutionResponse"}
+                                }
+                            }
+                        }
+                    },
+                    "400": {"description": "UUID malformado.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "401": {"description": "Não autenticado.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "403": {"description": "Acesso proibido ao histórico deste aluno.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "404": {"description": "Aluno inexistente.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}}
+                }
+            }
+        },
+        "/api/v1/auth/register": {
+            "post": {
+                "tags": ["Authentication"],
+                "summary": "Registrar novo usuário no sistema",
+                "description": "Cadastro inicial de Personal Trainer (com CREF obrigatório) ou Aluno.",
+                "operationId": "registerUser",
+                "security": [],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/RegisterUserDTO"}
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Usuário registrado com sucesso.",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/UserResponse"}
+                            }
+                        }
+                    },
+                    "400": {"description": "E-mail já cadastrado.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "422": {"description": "Dados inválidos ou CREF ausente para Personal.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}}
+                }
+            }
+        },
+        "/api/v1/auth/login": {
+            "post": {
+                "tags": ["Authentication"],
+                "summary": "Autenticar usuário e emitir token JWT",
+                "description": "Valida e-mail e senha e retorna token de acesso Bearer JWT.",
+                "operationId": "loginUser",
+                "security": [],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/LoginRequestDTO"}
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Autenticação bem-sucedida.",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/AuthTokenResponse"}
+                            }
+                        }
+                    },
+                    "401": {"description": "Credenciais inválidas.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}},
+                    "422": {"description": "Formato de e-mail inválido.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}}
+                }
+            }
+        },
+        "/api/v1/auth/me": {
+            "get": {
+                "tags": ["Authentication"],
+                "summary": "Consultar dados do usuário autenticado",
+                "description": "Retorna o perfil do usuário atualmente autenticado a partir do token Bearer.",
+                "operationId": "getCurrentUser",
+                "responses": {
+                    "200": {
+                        "description": "Dados do usuário autenticado.",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/UserResponse"}
+                            }
+                        }
+                    },
+                    "401": {"description": "Token inválido, expirado ou não informado.", "content": {"application/problem+json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}}
+                }
+            }
+        }
+    }
+}
+
+# Output file paths
+out_scratch = Path(r"C:\Users\eeral\.gemini\antigravity\scratch\gymflow-api\gymflow_apidog.json")
+out_downloads = Path(r"C:\Users\eeral\Downloads\gymflow_apidog.json")
+
+with open(out_scratch, "w", encoding="utf-8") as f:
+    json.dump(spec, f, indent=2, ensure_ascii=False)
+
+with open(out_downloads, "w", encoding="utf-8") as f:
+    json.dump(spec, f, indent=2, ensure_ascii=False)
+
+print(f"Spec saved to: {out_scratch}")
+print(f"Spec saved to: {out_downloads}")
+print(f"Total Routes: {len(spec['paths'])}")
+print(f"Total Components/Schemas: {len(spec['components']['schemas'])}")

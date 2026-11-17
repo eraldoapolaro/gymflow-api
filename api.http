@@ -1,0 +1,123 @@
+### GymFlow API — Testes HTTP para Demonstração ao Vivo
+### Requer a extensão REST Client no VS Code ou importação no Thunder Client / Insomnia
+
+@baseUrl = http://127.0.0.1:8000
+@contentType = application/json
+
+### 1. Healthcheck / OpenAPI Docs
+GET {{baseUrl}}/docs
+
+### 2. Login como Personal Trainer (Carlos)
+# @name loginPersonal
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "carlos@gymflow.dev",
+  "password": "Personal123#"
+}
+
+### Guardar Token do Personal
+@personalToken = {{loginPersonal.response.body.accessToken}}
+
+### 3. Obter dados do usuário logado (/me)
+GET {{baseUrl}}/api/v1/auth/me
+Authorization: Bearer {{personalToken}}
+
+### 4. Personal lista seus alunos (com paginação)
+GET {{baseUrl}}/api/v1/students?page=1&limit=10
+Authorization: Bearer {{personalToken}}
+
+### 5. Personal cadastra novo aluno
+# @name createStudent
+POST {{baseUrl}}/api/v1/students
+Authorization: Bearer {{personalToken}}
+Content-Type: {{contentType}}
+
+{
+  "name": "Mariana Aluna Demo",
+  "email": "mariana.demo@gymflow.dev",
+  "password": "SenhaForte123#",
+  "phone": "+5511988887777",
+  "profile": {
+    "weightKg": 63.5,
+    "heightCm": 167.0,
+    "goal": "WEIGHT_LOSS",
+    "notes": "Foco em emagrecimento saudável e condicionamento"
+  }
+}
+
+### 6. Personal cria ficha de treino periodizada
+POST {{baseUrl}}/api/v1/workouts
+Authorization: Bearer {{personalToken}}
+Content-Type: {{contentType}}
+
+{
+  "studentId": "22222222-2222-2222-2222-222222222222",
+  "title": "Periodização Hipertrofia Fase 2",
+  "description": "Treino com progressão linear de cargas e descanso reduzido.",
+  "startDate": "2026-03-01",
+  "status": "ACTIVE",
+  "routines": [
+    {
+      "name": "Treino A — Inferiores e Core",
+      "dayOfWeek": "Segunda-feira",
+      "order": 1,
+      "exercises": [
+        {
+          "name": "Agachamento Livre com Barra",
+          "muscleGroup": "LEGS",
+          "sets": 4,
+          "reps": "8-10",
+          "restSeconds": 90,
+          "weightKg": 80.0,
+          "notes": "Profundidade completa, postura ereta",
+          "order": 1
+        }
+      ]
+    }
+  ]
+}
+
+### 7. Login como Aluno (Rodrigo)
+# @name loginStudent
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "rodrigo@gymflow.dev",
+  "password": "Aluno123#"
+}
+
+### Guardar Token do Aluno
+@studentToken = {{loginStudent.response.body.accessToken}}
+
+### 8. Aluno consulta seu plano de treino atribuído
+GET {{baseUrl}}/api/v1/workouts/55555555-5555-5555-5555-555555555555
+Authorization: Bearer {{studentToken}}
+
+### 9. Aluno realiza check-in e registra esforço RPE
+POST {{baseUrl}}/api/v1/routines/33333333-3333-3333-3333-333333333333/executions
+Authorization: Bearer {{studentToken}}
+Content-Type: {{contentType}}
+
+{
+  "durationMinutes": 50,
+  "rpeScore": 8,
+  "feedback": "Treino intenso, senti bom pump e excelente recuperação entre as séries."
+}
+
+### 10. Auditoria de Histórico de Execuções
+GET {{baseUrl}}/api/v1/students/22222222-2222-2222-2222-222222222222/executions
+Authorization: Bearer {{personalToken}}
+
+### 11. Teste de Conformidade RFC 9457: UUID Inexistente (404)
+GET {{baseUrl}}/api/v1/students/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{personalToken}}
+
+### 12. Teste de Conformidade RFC 9457: JSON Malformado (400)
+POST {{baseUrl}}/api/v1/students
+Authorization: Bearer {{personalToken}}
+Content-Type: application/json
+
+{ "name": "Erro sintaxe", "incompleto": 

@@ -33,10 +33,7 @@
 
 | Integrante | RA / Matrícula | E-mail Institucional | Função Principal no Projeto |
 | :--- | :--- | :--- | :--- |
-| **[Nome Integrante 1]** | `[RA 1]` | `email1@instituicao.edu.br` | **Tech Lead** (Arquitetura, SDD e Modelagem ORM) |
-| **[Nome Integrante 2]** | `[RA 2]` | `email2@instituicao.edu.br` | **Backend Coder** (Autenticação JWT, Rotinas e Schemas) |
-| **[Nome Integrante 3]** | `[RA 3]` | `email3@instituicao.edu.br` | **QA Engineer** (Suíte Pytest, Fixtures e Validação RFC 9457) |
-| **[Nome Integrante 4]** | `[RA 4]` | `email4@instituicao.edu.br` | **DevOps & Specs** (OpenAPI, Apidog Mock e CI/CD) |
+| **[Eraldo Apolaro]** | `[2840482421024]` | 
 
 ---
 
@@ -51,10 +48,10 @@ O projeto adotou a metodologia **Spec-Driven Development (SDD)**, orientada a es
 └─────────────────┘      └─────────────────┘      └─────────────────┘      └─────────────────┘
 ```
 
-1. **[SPEC.md](file:///c:/Users/eeral/.gemini/antigravity/scratch/gymflow-api/SPEC.md)**: Requisitos Funcionais (RF01-RF08), Não Funcionais (RNF01-RNF05) e Contratos.
-2. **[PLAN.md](file:///c:/Users/eeral/.gemini/antigravity/scratch/gymflow-api/PLAN.md)**: Plano granular em 7 fases elaborado pela persona `[Tech Lead]` e homologado por `[QA Engineer]`.
-3. **[AGENTS.md](file:///c:/Users/eeral/.gemini/antigravity/scratch/gymflow-api/AGENTS.md)**: Governança das personas de IA (`[Tech Lead]`, `[Backend Coder]`, `[QA Engineer]`) e Registro de Decisões de Arquitetura (ADRs).
-4. **[STYLEGUIDE.md](file:///c:/Users/eeral/.gemini/antigravity/scratch/gymflow-api/STYLEGUIDE.md)**: Convenções de código PEP 8, Pydantic v2 e RFC 9457.
+1. **[SPEC.md](file:///c:/Users/eeral/.gemini/antigravity/scratch/gymflow-api/SPEC.md)** 
+2. **[PLAN.md](file:///c:/Users/eeral/.gemini/antigravity/scratch/gymflow-api/PLAN.md)**
+3. **[AGENTS.md](file:///c:/Users/eeral/.gemini/antigravity/scratch/gymflow-api/AGENTS.md)**
+4. **[STYLEGUIDE.md](file:///c:/Users/eeral/.gemini/antigravity/scratch/gymflow-api/STYLEGUIDE.md)**
 
 ---
 

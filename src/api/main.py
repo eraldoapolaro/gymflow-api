@@ -5,6 +5,7 @@ import json
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.exceptions import (
@@ -86,6 +87,14 @@ app.add_exception_handler(InvalidUUIDException, invalid_uuid_exception_handler)
 app.add_exception_handler(ConflictException, conflict_exception_handler)
 app.add_exception_handler(StarletteHTTPException, starlette_http_exception_handler)
 app.add_exception_handler(Exception, generic_exception_handler)
+
+# ---------------------------------------------------------------------------
+# Root Redirect to Swagger Documentation
+# ---------------------------------------------------------------------------
+@app.get("/", include_in_schema=False)
+async def root_redirect():
+    return RedirectResponse(url="/docs")
+
 
 # ---------------------------------------------------------------------------
 # Include Routers

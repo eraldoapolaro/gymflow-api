@@ -135,4 +135,9 @@ src/api/tests/test_errors.py (4 testes) .............. PASSED
 4. **Resiliência e RFC 9457:**
    - Middleware interceptador de JSON malformado e tratamento semântico universal sem vazamento de `{"detail": "..."}`.
 
----
+### 8. Credenciais Pré-configuradas (Seeds)
+
+| Papel | Nome | E-mail | Senha |
+| :--- | :--- | :--- | :--- |
+| **Personal Trainer** | Carlos Personal | `carlos@gymflow.dev` | `Personal123#` |
+| **Aluno** | Rodrigo Aluno | `rodrigo@gymflow.dev` | `Aluno123#` |

@@ -31,7 +31,7 @@
 
 ## 1. Organização da Equipe
 
-| Integrante | RA / Matrícula | E-mail Institucional | Função Principal no Projeto |
+| Integrante | RA / Matrícula 
 | :--- | :--- | :--- | :--- |
 | **[Eraldo Apolaro]** | `[2840482421024]` | 
 
@@ -125,7 +125,7 @@ src/api/tests/test_errors.py (4 testes) .............. PASSED
 
 ---
 
-## 7. Conteúdos Extras (Diferenciais do Projeto)
+## 7. Conteúdos Extras
 
 1. **Containerização Docker:**
    - [Dockerfile](file:///c:/Users/eeral/.gemini/antigravity/scratch/gymflow-api/Dockerfile) multi-stage otimizado.
@@ -138,45 +138,3 @@ src/api/tests/test_errors.py (4 testes) .............. PASSED
    - Middleware interceptador de JSON malformado e tratamento semântico universal sem vazamento de `{"detail": "..."}`.
 
 ---
-
-## 8. Roteiro de Demonstração Funcional ao Vivo
-
-### 8.1. Pré-requisitos e Inicialização
-
-```bash
-# 1. Clonar o repositório
-git clone <URL_DO_REPOSITORIO>
-cd gymflow-api
-
-# 2. Criar e ativar o ambiente virtual
-python -m venv .venv
-# No Windows:
-.venv\Scripts\activate
-# No Linux/Mac:
-source .venv/bin/activate
-
-# 3. Instalar dependências
-pip install -r src/api/requirements.txt
-
-# 4. Iniciar a API
-uvicorn api.main:app --reload
-```
-
-A API estará disponível em: **`http://127.0.0.1:8000`**  
-Swagger interativo: **`http://127.0.0.1:8000/docs`**
-
-### 8.2. Credenciais Pré-configuradas (Seeds)
-
-| Papel | Nome | E-mail | Senha |
-| :--- | :--- | :--- | :--- |
-| **Personal Trainer** | Carlos Personal | `carlos@gymflow.dev` | `Personal123#` |
-| **Aluno** | Rodrigo Aluno | `rodrigo@gymflow.dev` | `Aluno123#` |
-
-### 8.3. Sequência de Demonstração Recomendada:
-1. **Autenticação:** Fazer login com `carlos@gymflow.dev` em `POST /api/v1/auth/login` e copiar o Bearer Token.
-2. **Carteira de Alunos:** Acessar `GET /api/v1/students` e mostrar a paginação (`page=1&limit=10`).
-3. **Prescrição de Treino:** Criar nova ficha via `POST /api/v1/workouts` e mostrar rotinas e exercícios cadastrados em cascata.
-4. **Visão do Aluno:** Fazer login com `rodrigo@gymflow.dev`, consultar sua ficha em `GET /api/v1/workouts/{id}`.
-5. **Check-in & RPE:** Registrar execução em `POST /api/v1/routines/{id}/executions` informando duração de 55 min, RPE 8 e feedback.
-6. **Auditoria:** Voltar com o Personal e mostrar o histórico em `GET /api/v1/students/{id}/executions`.
-7. **Resiliência:** Mostrar o erro padronizado RFC 9457 ao buscar `00000000-0000-0000-0000-000000000000` (HTTP 404).

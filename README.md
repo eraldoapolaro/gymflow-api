@@ -31,9 +31,7 @@
 
 ## 1. Organização da Equipe
 
-| Integrante | RA / Matrícula 
-| :--- | :--- | :--- | :--- |
-| **[Eraldo Apolaro]** | `[2840482421024]` | 
+| **Eraldo Apolaro** - 2840482421024
 
 ---
 
